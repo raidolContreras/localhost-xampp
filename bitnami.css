@@ -1,0 +1,148 @@
+.module_top,
+.module_bottom {
+  visibility: hidden;
+}
+
+table {
+  border: 0px !important;
+}
+
+.module_content img {
+  min-width: 70px;
+}
+
+.module_content h2 {
+  font-size: 30px;
+}
+
+
+
+body {
+  background: #f9f9fc;
+  font-family: 'Segoe UI', sans-serif;
+  padding: 2rem;
+}
+
+.search-bar {
+  background-color: #f0f4ff;
+  border-radius: 20px;
+  padding: 0.5rem 1rem;
+  flex-grow: 1;
+}
+
+.folder-box {
+  background-color: #fff;
+  border-radius: 20px;
+  padding: 1.5rem;
+  text-align: center;
+  transition: all 0.3s ease;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.05);
+  cursor: pointer;
+  
+  position: relative;        /* <--- importante */
+  padding-bottom: 3.2rem;  
+}
+
+.folder-box:hover {
+  box-shadow: 0 6px 20px rgba(0, 0, 0, 0.08);
+  transform: translateY(-5px);
+}
+
+.folder-icon {
+  font-size: 3rem;
+  color: #ffc107;
+  transition: .3s ease;
+}
+
+.folder-box:hover .fa-folder {
+  display: none;
+}
+
+.folder-box:hover .fa-folder-open {
+  display: inline;
+}
+
+.fa-folder-open {
+  display: none;
+}
+
+.folder-name {
+  font-weight: 600;
+  color: #333;
+}
+
+.folder-size {
+  font-size: 0.85rem;
+  color: #555;
+  margin-bottom: .25rem;
+}
+
+.file-count {
+  font-size: 0.9rem;
+  color: #666;
+}
+
+/* Botón de eliminar (mover) */
+.delete-btn {
+  position: absolute;
+  top: 8px;
+  right: 8px;
+  display: none;
+  z-index: 10;
+  border-radius: 50%;
+}
+
+.view-btn {
+  position: absolute;
+  top: 8px;
+  left: 8px;
+  display: none;
+  z-index: 10;
+  border-radius: 50%;
+  background: goldenrod;
+  border-color: goldenrod;
+}
+.view-btn:hover {
+  background: #9b7516;
+  border-color: #9b7516;
+}
+
+/* MOVIDO ABAJO-IZQUIERDA: VSCode (icono azul/“share”) */
+.vscode-btn {
+  position: absolute;
+  bottom: 12px;   /* antes top: 8px */
+  left: 8px;      /* antes left: 50px */
+  display: none;
+  z-index: 10;
+  border-radius: 50%;
+  background: #007acc;
+  border-color: #007acc;
+}
+.vscode-btn:hover {
+  background: #005a9e;
+  border-color: #005a9e;
+}
+
+/* MOVIDO ABAJO-DERECHA: Key (contraseñas) */
+.view-pass-btn {
+  position: absolute;
+  bottom: 12px;   /* antes top: 8px */
+  right: 8px;     /* antes right: 50px */
+  display: none;
+  z-index: 10;
+  border-radius: 50%;
+  background: #17a2b8;
+  border-color: #17a2b8;
+}
+.view-pass-btn:hover {
+  background: #138496;
+  border-color: #138496;
+}
+
+/* Mostrar botones al hacer hover en la tarjeta */
+.folder-box:hover .delete-btn,
+.folder-box:hover .view-btn,
+.folder-box:hover .view-pass-btn,
+.folder-box:hover .vscode-btn {
+  display: block;
+}
