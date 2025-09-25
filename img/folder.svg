@@ -1,0 +1,72 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="124" height="97.284" viewBox="0 0 124 97.284" class="svg-folder">
+  <style>
+    .svg-folder {
+      cursor: pointer;
+      /* necesario para que CSS transforms en SVG funcionen correctamente */
+      overflow: visible;
+    }
+
+    /* transición y punto de origen para el folder completo */
+    #folder {
+      transition: transform 0.4s cubic-bezier(0.34, 1.56, 0.64, 1);
+      transform-box: fill-box;
+      transform-origin: center;
+      will-change: transform;
+    }
+
+    /* transición y punto de origen para la página, su doblez y el texto */
+    #page,
+    #page-folded,
+    #page-text,
+    #page-group {
+      transition: transform 0.4s cubic-bezier(0.34, 1.56, 0.64, 1);
+      transform-box: fill-box;
+      transform-origin: center;
+      will-change: transform;
+    }
+
+    /* al hacer hover: sube la página, baja el folder */
+    .folder-box:hover #page-group{
+      transform: translateY(-15px) scale(1.05);
+    }
+
+    .folder-box:hover #folder-front,
+    .folder-box:hover #folder-front-shadow {
+      transform: rotateY(10deg) scale(1.05);
+    }
+  </style>
+
+  <g id="folder" transform="translate(0 -50.447)">
+    <path id="folder-back" data-name="Path 335"
+      d="M7.818,50.447H37.474a5.43,5.43,0,0,1,4.705,2.72l4.881,6.668a5.43,5.43,0,0,0,4.705,2.72H124v76.126a7.24,7.24,0,0,1-7.239,7.239H7.239A7.24,7.24,0,0,1,0,138.682V71A54.325,54.325,0,0,1,2.563,54.51h0A5.43,5.43,0,0,1,7.818,50.447Z"
+      fill="#f6c358" />
+    <g id="page-group">
+      <path id="page" data-name="Path 338" d="M80.694 8.229 69.142 19.781v49.65h96.858v-53.431Q166 8 158 8Z"
+        transform="translate(-53.787 45.998)" fill="#e1e6e9" />
+      <path id="page-folded" data-name="Path 339" d="M80.693,19.779V8.227L69.141,19.78Z"
+        transform="translate(-53.786 45.998)" fill="#ebf0f3" />
+      <g id="page-text" data-name="Group 432" transform="translate(32.642 64.987)">
+        <rect id="Rectangle_277" data-name="Rectangle 277" width="50.267" height="2.787"
+        transform="translate(0 0)" fill="#d5d6db" />
+        <rect id="Rectangle_278" data-name="Rectangle 278" width="39.47" height="2.787"
+        transform="translate(10.797 9.769)" fill="#d5d6db" />
+        <rect id="Rectangle_279" data-name="Rectangle 279" width="39.47" height="2.787"
+        transform="translate(10.797 19.545)" fill="#d5d6db" />
+      </g>
+    </g>
+    <defs>
+      <filter id="shadow-blur" x="-10%" y="-10%" width="120%" height="120%">
+        <feGaussianBlur stdDeviation="2"/>
+      </filter>
+    </defs>
+
+    <!-- Shadow for the folder front -->
+    <path id="folder-front-shadow" 
+      d="M118.57,64.117H88.686a5.429,5.429,0,0,0-4.938,3.173L78.634,78.482A5.43,5.43,0,0,1,73.7,81.655H0v68.887a7.24,7.24,0,0,0,7.239,7.239H116.761A7.24,7.24,0,0,0,124,150.542v-81A5.43,5.43,0,0,0,118.57,64.117Z"
+      transform="translate(3 -7.05)" fill="rgba(0,0,0,0.2)" filter="url(#shadow-blur)" />
+      
+    <path id="folder-front" data-name="Path 336"
+      d="M118.57,64.117H88.686a5.429,5.429,0,0,0-4.938,3.173L78.634,78.482A5.43,5.43,0,0,1,73.7,81.655H0v68.887a7.24,7.24,0,0,0,7.239,7.239H116.761A7.24,7.24,0,0,0,124,150.542v-81A5.43,5.43,0,0,0,118.57,64.117Z"
+      transform="translate(0 -10.05)" fill="#fcd462" />
+  </g>
+</svg>
