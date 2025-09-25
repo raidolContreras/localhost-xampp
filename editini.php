@@ -1,5 +1,4 @@
 <?php
-// php-ini-editor.php — Tailwind iOS + API AJAX
 declare(strict_types=1);
 
 /* ------------------ CONFIG BÁSICA ------------------ */
