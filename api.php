@@ -3,15 +3,79 @@
 // Reemplaza a functions.php como backend con respuestas JSON.
 
 declare(strict_types=1);
-header('Cache-Control: no-store, no-cache, must-revalidate, max-age=0');
-
+header('Content-Type: application/json; charset=UTF-8');
 $baseDir   = __DIR__;
 $noMostrar = ['.', '..', 'dashboard', 'xampp', 'webalizer', 'img', '_PAPELERIA', 'pass'];
+const CACHE_FILE = __DIR__ . '/.folder_cache.json';
+const DEFAULT_TTL = 300; // 5 min: puedes subirlo si quieres más agresivo
+
+function jres(array $arr): never {
+  echo json_encode($arr, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
+  exit;
+}
+function human_bytes(int $b): string {
+  $u = ['B','KB','MB','GB','TB'];
+  for ($i=0; $b>=1024 && $i < count($u)-1; $i++) $b/=1024;
+  return sprintf('%0.2f %s', $b, $u[$i]);
+}
+function read_cache(): array {
+  if (!is_file(CACHE_FILE)) return ['time'=>0,'data'=>[]];
+  $raw = @file_get_contents(CACHE_FILE);
+  if ($raw === false) return ['time'=>0,'data'=>[]];
+  $j = json_decode($raw, true);
+  if (!is_array($j) || !isset($j['data'])) return ['time'=>0,'data'=>[]];
+  // normalizar
+  $j['time'] = intval($j['time'] ?? 0);
+  $j['data'] = is_array($j['data']) ? $j['data'] : [];
+  return $j;
+}
+function write_cache(array $cache): void {
+  $fp = @fopen(CACHE_FILE, 'c+');
+  if (!$fp) return;
+  @flock($fp, LOCK_EX);
+  ftruncate($fp, 0);
+  fwrite($fp, json_encode($cache, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES | JSON_PRETTY_PRINT));
+  fflush($fp);
+  @flock($fp, LOCK_UN);
+  fclose($fp);
+}
+function is_project_dir(string $path, string $name): bool {
+  if ($name[0] === '.') return false;
+  if (!is_dir($path)) return false;
+  // Excluye carpetas “de sistema” del dashboard, ajusta a tu gusto:
+  $excluded = [
+    'img','images','assets','css','js','fonts','node_modules','vendor',
+    'public','.git','.github','.vscode','.idea','_trash','__MACOSX'
+  ];
+  return !in_array($name, $excluded, true);
+}
+function list_root_projects(): array {
+  $root = __DIR__;
+  $dirs = @scandir($root) ?: [];
+  $out = [];
+  foreach ($dirs as $name) {
+    $full = $root . DIRECTORY_SEPARATOR . $name;
+    if (is_project_dir($full, $name)) $out[$name] = $full;
+  }
+  return $out; // [name => fullpath]
+}
+function dir_size_and_count(string $dir): array {
+  // Recuento completo (solo si hace falta). Puedes excluir subcarpetas pesadas si quieres.
+  $size = 0; $files = 0;
+  $it = new RecursiveIteratorIterator(
+    new RecursiveDirectoryIterator($dir, FilesystemIterator::SKIP_DOTS | FilesystemIterator::FOLLOW_SYMLINKS),
+    RecursiveIteratorIterator::SELF_FIRST
+  );
+  foreach ($it as $f) {
+    $p = $f->getPathname();
+    if ($f->isFile()) { $files++; $size += @filesize($p) ?: 0; }
+  }
+  return [$size, $files];
+}
 
 // -------- Helpers --------
 function jsonOut(array $data, int $code = 200): void {
     http_response_code($code);
-    header('Content-Type: application/json; charset=utf-8');
     echo json_encode($data);
     exit;
 }
