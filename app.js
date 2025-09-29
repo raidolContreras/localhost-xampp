@@ -28,6 +28,22 @@ let state = {
   totalSizeBytes: 0,
 };
 
+// --- Favoritos (persistencia en localStorage) ---
+const FAV_KEY = "favProjects";
+function getFavSet() {
+  try { return new Set(JSON.parse(localStorage.getItem(FAV_KEY) || "[]")); }
+  catch { return new Set(); }
+}
+function saveFavSet(set) {
+  localStorage.setItem(FAV_KEY, JSON.stringify([...set]));
+}
+function isFav(name) {
+  return getFavSet().has(name);
+}
+function currentSort() {
+  return localStorage.getItem("folderSortPreference") || "name_asc";
+}
+
 document.addEventListener("DOMContentLoaded", () => {
   init();
 
@@ -128,6 +144,17 @@ async function init() {
     state.projects = data.projects || [];
     state.totalSizeBytes = Number(data.total_size_bytes || 0);
 
+    // Quitar favoritos que ya no existen en la lista de proyectos
+    (() => {
+      const favs = getFavSet();
+      const existing = new Set((state.projects || []).map(p => p.name));
+      let changed = false;
+      for (const n of [...favs]) {
+        if (!existing.has(n)) { favs.delete(n); changed = true; }
+      }
+      if (changed) saveFavSet(favs);
+    })();
+
     // Header totals + PHP info
     document.getElementById("totalSizeLabel").textContent =
       data.total_size_human || "—";
@@ -174,87 +201,82 @@ function renderProjects(sortType = "name_asc") {
     return;
   }
 
-  // Orden
+  // 1) Orden base según preferencia
   let arr = [...state.projects];
-  const [field, order] = sortType.split("_");
+  const [field, order] = String(sortType).split("_");
   arr.sort((a, b) => {
     if (field === "name") {
-      return order === "asc"
-        ? a.name.localeCompare(b.name)
-        : b.name.localeCompare(a.name);
+      return order === "asc" ? a.name.localeCompare(b.name) : b.name.localeCompare(a.name);
     }
     if (field === "size") {
-      return order === "asc"
-        ? a.size_bytes - b.size_bytes
-        : b.size_bytes - a.size_bytes;
+      return order === "asc" ? (a.size_bytes - b.size_bytes) : (b.size_bytes - a.size_bytes);
     }
     if (field === "created") {
-      return order === "asc" ? a.created - b.created : b.created - a.created;
+      return order === "asc" ? (a.created - b.created) : (b.created - a.created);
     }
     return 0;
   });
 
-  // Render
-  const total = state.totalSizeBytes || 0;
-  container.innerHTML = arr
-    .map((p) => {
-      const percent = total > 0 ? (p.size_bytes / total) * 100 : 0;
-      const files = Number(p.files_count || 0);
-      const filesLabel =
-        files > 0
-          ? `${String(files).padStart(2, "0")} ${
-              files === 1 ? "Archivo" : "Archivos"
-            }`
-          : "Vacio";
-      const vsPath = encodeURI(p.path || "");
+  // 2) Particionar por favoritos => favoritos siempre van primero (manteniendo el orden dentro de su grupo)
+  const favsSet = getFavSet();
+  const favs = arr.filter(p => favsSet.has(p.name));
+  const normal = arr.filter(p => !favsSet.has(p.name));
+  const ordered = [...favs, ...normal];
 
-      return `
+  // 3) Render
+  const total = Number(state.totalSizeBytes || 0);
+  container.innerHTML = ordered.map((p) => {
+    const percent = total > 0 ? (p.size_bytes / total) * 100 : 0;
+    const files = Number(p.files_count || 0);
+    const filesLabel = files > 0
+      ? `${String(files).padStart(2, "0")} ${files === 1 ? "Archivo" : "Archivos"}`
+      : "Vacio";
+    const vsPath = encodeURI(p.path || "");
+    const favActive = favsSet.has(p.name);
+
+    return `
       <div class="col-sm-6 col-md-4 col-lg-3 folder"
-        data-name="${escapeAttr(p.name.toLowerCase())}"
-        data-size="${escapeAttr(String(p.size_bytes))}"
-        data-created="${escapeAttr(String(p.created))}">
+           data-name="${escapeAttr(p.name.toLowerCase())}"
+           data-size="${escapeAttr(String(p.size_bytes))}"
+           data-created="${escapeAttr(String(p.created))}">
         <a href="${p.name}" class="no-underline">
           <div class="folder-box">
+            <!-- Botón estrella (favorito) -->
+            <button class="favorite-btn ${favActive ? "active" : ""}"
+                    data-folder="${escapeAttr(p.name)}"
+                    aria-label="${favActive ? "Quitar de favoritos" : "Marcar como favorito"}"
+                    aria-pressed="${favActive ? "true" : "false"}"
+                    title="${favActive ? "Quitar de favoritos" : "Agregar a favoritos"}">
+              <i class="${favActive ? "fas" : "far"} fa-star"></i>
+            </button>
+
             <div class="folder-actions btn-group">
-              <button class="btn btn-sm btn-primary view-btn" data-folder="${escapeAttr(
-                p.name
-              )}" title="Ver archivos">
+              <button class="btn btn-sm btn-primary view-btn" data-folder="${escapeAttr(p.name)}" title="Ver archivos">
                 <i class="fas fa-folder-open"></i>
               </button>
               <button class="btn btn-sm btn-secondary vscode-btn" data-path="${vsPath}" title="Abrir en VSCode">
                 <i class="fas fa-code-merge"></i>
               </button>
-              <button class="btn btn-sm btn-info view-pass-btn" data-folder="${escapeAttr(
-                p.name
-              )}" title="Administrar contraseñas de administradores">
+              <button class="btn btn-sm btn-info view-pass-btn" data-folder="${escapeAttr(p.name)}" title="Administrar contraseñas de administradores">
                 <i class="fas fa-key"></i>
               </button>
-              <button class="btn btn-sm btn-danger delete-btn" data-folder="${escapeAttr(
-                p.name
-              )}" title="Mover a papelería">
+              <button class="btn btn-sm btn-danger delete-btn" data-folder="${escapeAttr(p.name)}" title="Mover a papelería">
                 <i class="fas fa-trash"></i>
               </button>
-              <button class="btn btn-sm btn-warning cache-btn" 
-                      data-folder="${escapeAttr(p.name)}" 
-                      title="Limpiar caché de este proyecto">
+              <button class="btn btn-sm btn-warning cache-btn" data-folder="${escapeAttr(p.name)}" title="Limpiar caché de este proyecto">
                 <i class="fas fa-broom"></i>
               </button>
             </div>
 
-            <div class="folder-icon">
-            </div>
+            <div class="folder-icon"></div>
 
             <div class="folder-name mt-2">${escapeHtml(p.name)}</div>
-            <div class="folder-size">${escapeHtml(
-              p.size_human
-            )} (${percent.toFixed(1)}%)</div>
+            <div class="folder-size">${escapeHtml(p.size_human)} (${percent.toFixed(1)}%)</div>
 
             <div class="progress mb-2" style="height:6px;">
               <div class="progress-bar" role="progressbar"
-                  style="width:${percent.toFixed(2)}%;"
-                  aria-valuenow="${percent.toFixed(
-                    0
-                  )}" aria-valuemin="0" aria-valuemax="100"></div>
+                   style="width:${percent.toFixed(2)}%;"
+                   aria-valuenow="${percent.toFixed(0)}" aria-valuemin="0" aria-valuemax="100"></div>
             </div>
 
             <div class="file-count">${filesLabel}</div>
@@ -262,23 +284,19 @@ function renderProjects(sortType = "name_asc") {
         </a>
       </div>
     `;
-    })
-    .join("");
+  }).join("");
 
-  // Bind acciones por tarjeta
+  // 4) Bind de acciones existentes
   container.querySelectorAll(".delete-btn").forEach((btn) => {
     btn.addEventListener("click", async (e) => {
       e.preventDefault();
       const folder = btn.dataset.folder;
-      if (!confirm(`¿Está seguro que desea eliminar la carpeta "${folder}"?`))
-        return;
+      if (!confirm(`¿Está seguro que desea eliminar la carpeta "${folder}"?`)) return;
       try {
         const res = await apiPost({ action: "move", folder });
         if (!res.success) return alert("Error: " + (res.message || ""));
         await init();
-      } catch (err) {
-        alert("Error: " + err.message);
-      }
+      } catch (err) { alert("Error: " + err.message); }
     });
   });
 
@@ -288,7 +306,6 @@ function renderProjects(sortType = "name_asc") {
       const modalEl = document.getElementById("folderModal");
       const modal = new bootstrap.Modal(modalEl);
       modal.show();
-      // carga asíncrona sin borrar la estructura del modal
       loadFolderFiles(btn.dataset.folder);
     });
   });
@@ -340,7 +357,26 @@ function renderProjects(sortType = "name_asc") {
     });
   });
 
+  // 5) Bind del botón favorito
+  container.querySelectorAll(".favorite-btn").forEach((btn) => {
+    btn.addEventListener("click", (e) => {
+      // Evitar abrir el enlace de la tarjeta
+      e.preventDefault();
+      e.stopPropagation();
+      const folder = btn.dataset.folder;
+      if (!folder) return;
+
+      const set = getFavSet();
+      if (set.has(folder)) set.delete(folder); else set.add(folder);
+      saveFavSet(set);
+
+      // Re-render con el mismo sort para que se reposicione arriba/abajo
+      renderProjects(currentSort());
+      // Volver a inyectar el SVG de carpeta (render wrapper lo hace)
+    });
+  });
 }
+
 
 // ------------------- Search -------------------
 function onSearch(e) {
@@ -390,18 +426,18 @@ async function loadFolderFiles(folder) {
           <div class="fw-bold mb-2"><i class="fas fa-folder"></i> Carpetas</div>
           <ul class="list-group list-group-flush">
             ${folders
-              .map(
-                (f) => `
+          .map(
+            (f) => `
               <li class="list-group-item d-flex align-items-center">
                 <i class="fas fa-folder text-warning me-2"></i>
                 <span class="flex-grow-1">${escapeHtml(f.name)}</span>
                 <span class="badge bg-secondary ms-2">${escapeHtml(
-                  f.size
-                )}</span>
+              f.size
+            )}</span>
               </li>
             `
-              )
-              .join("")}
+          )
+          .join("")}
           </ul>
         </div>`;
     }
@@ -411,18 +447,18 @@ async function loadFolderFiles(folder) {
           <div class="fw-bold mb-2"><i class="fas fa-file"></i> Archivos</div>
           <ul class="list-group list-group-flush">
             ${files
-              .map(
-                (f) => `
+          .map(
+            (f) => `
               <li class="list-group-item d-flex align-items-center">
                 <i class="fas fa-file text-muted me-2"></i>
                 <span class="flex-grow-1">${escapeHtml(f.name)}</span>
                 <span class="badge bg-secondary ms-2">${escapeHtml(
-                  f.size
-                )}</span>
+              f.size
+            )}</span>
               </li>
             `
-              )
-              .join("")}
+          )
+          .join("")}
           </ul>
         </div>`;
     }
@@ -472,40 +508,40 @@ function renderPasswordsList(passwords, folder) {
   return `
     <div class="p-4">
       ${passwords
-        .map(
-          (p) => `
+      .map(
+        (p) => `
         <div class="list-group-item d-flex align-items-center justify-content-between gap-3">
           <div class="d-flex align-items-center gap-3">
             <div class="fw-bold text-primary"><i class="fas fa-user me-1"></i> ${escapeHtml(
-              p.name || ""
-            )}</div>
+          p.name || ""
+        )}</div>
             <span class="badge bg-light text-dark border px-3 py-2" style="font-family:monospace;">${escapeHtml(
-              p.password || ""
-            )}</span>
+          p.password || ""
+        )}</span>
           </div>
           <div class="d-flex gap-2">
             <button class="btn btn-outline-secondary btn-sm copy-password-btn" data-password="${escapeAttr(
-              p.password || ""
-            )}" title="Copiar contraseña">
+          p.password || ""
+        )}" title="Copiar contraseña">
               <i class="fas fa-copy"></i>
             </button>
             <button class="btn btn-danger btn-sm delete-password-btn" data-name="${escapeAttr(
-              p.name || ""
-            )}" data-folder="${escapeAttr(folder)}" title="Eliminar">
+          p.name || ""
+        )}" data-folder="${escapeAttr(folder)}" title="Eliminar">
               <i class="fas fa-trash"></i>
             </button>
             <button class="btn btn-primary btn-sm update-password-btn" data-name="${escapeAttr(
-              p.name || ""
-            )}" data-password="${escapeAttr(
-            p.password || ""
-          )}" data-folder="${escapeAttr(folder)}" title="Actualizar">
+          p.name || ""
+        )}" data-password="${escapeAttr(
+          p.password || ""
+        )}" data-folder="${escapeAttr(folder)}" title="Actualizar">
               <i class="fas fa-sync-alt"></i>
             </button>
           </div>
         </div>
       `
-        )
-        .join("")}
+      )
+      .join("")}
     </div>
   `;
 }
@@ -601,7 +637,7 @@ function escapeAttr(str) {
 
 async function clearCacheFor(folder) {
   const scopePath = `/${String(folder).replace(/^\/|\/$/g, "")}/`;
-  const baseUrl  = location.origin + scopePath;
+  const baseUrl = location.origin + scopePath;
 
   const result = {
     cacheDeleted: 0,
@@ -636,7 +672,7 @@ async function clearCacheFor(folder) {
           const ok = await reg.unregister();
           if (ok) result.swUnregistered++;
         }
-      } catch (_) {}
+      } catch (_) { }
     }
   }
 
@@ -654,7 +690,7 @@ async function clearCacheFor(folder) {
           result.idbDeleted++;
         }
       }
-    } catch (_) {}
+    } catch (_) { }
   }
 
   // 4) localStorage/sessionStorage (mejor esfuerzo por coincidencia)
@@ -667,7 +703,7 @@ async function clearCacheFor(folder) {
         result.lsKeys++;
       }
     }
-  } catch (_) {}
+  } catch (_) { }
   try {
     for (let i = sessionStorage.length - 1; i >= 0; i--) {
       const k = sessionStorage.key(i);
@@ -677,7 +713,7 @@ async function clearCacheFor(folder) {
         result.ssKeys++;
       }
     }
-  } catch (_) {}
+  } catch (_) { }
 
   // 5) Cookies (limitado: solo nombres visibles en este path)
   try {
@@ -691,7 +727,7 @@ async function clearCacheFor(folder) {
       document.cookie = `${encodeURIComponent(name)}=; expires=Thu, 01 Jan 1970 00:00:00 GMT; path=/`;
       result.cookies++;
     }
-  } catch (_) {}
+  } catch (_) { }
 
   return result;
 }
