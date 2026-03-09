@@ -1,214 +1,271 @@
-# Dashboard de Proyectos para XAMPP (htdocs)
+# Dashboard XAMPP - Documentacion Actualizada
 
-**Objetivo:** Este mini‑dashboard te permite **administrar carpetas de proyectos** ubicadas en el mismo directorio donde coloques estos archivos (por lo general, `C:\xampp\htdocs\`). Desde una interfaz web puedes:
+Panel web para administrar proyectos en htdocs con interfaz moderna (Tailwind), seguridad reforzada y flujos de mantenimiento para entorno local o red interna.
 
-- Listar proyectos con tamaño total, porcentaje ocupado y conteo de archivos.
-- **Crear** nuevas carpetas de proyecto.
-- **Mover a papelera** un proyecto completo (`_PAPELERIA/`).
-- Abrir proyectos localmente en **VS Code** (`vscode://file/...`).
-- Ver el **contenido (archivos/carpetas)** y el **README.md renderizado** de cada proyecto.
-- Gestionar un **banco de contraseñas por proyecto** (`pass/<proyecto>.json`): agregar, actualizar y eliminar.
-- Consultar **versión de PHP, directivas de `php.ini` y extensiones cargadas**.
-- **Editar `php.ini`** desde el modal básico del dashboard o usando un **editor avanzado** (`editini.php`).
-- **Limpiar caché del navegador por proyecto** (CacheStorage, ServiceWorkers, IndexedDB, storages y cookies) con un clic.
+## 1. Que hace hoy el sistema
 
-> ⚠️ **Seguridad**: Está pensado para **entornos locales** (desarrollo). No lo expongas en internet sin autenticación y sin limitar permisos del usuario del sistema. La API tiene operaciones de **lectura/escritura de disco**.
+- Lista proyectos del directorio base con metricas de tamano y cantidad de archivos.
+- Crea proyectos nuevos.
+- Mueve proyectos a papelera y permite restaurarlos o eliminarlos de forma definitiva.
+- Soporta acciones masivas en proyectos y papelera.
+- Renderiza README.md por proyecto con sanitizacion defensiva de HTML.
+- Gestiona credenciales por proyecto (guardado cifrado en disco).
+- Muestra estado PHP, directivas y extensiones.
+- Permite editar php.ini desde la interfaz.
+- Incluye autenticacion con modo local o modo red.
+- Incluye recuperacion de clave por correo SMTP.
+- Usa cache inteligente para metricas, sin depender de limpieza manual del usuario.
 
----
+## 2. Estructura del proyecto
 
-## 1) Requisitos
-
-- **XAMPP** (Apache + PHP 8.x). En Windows, suele estar en `C:\xampp\`.
-- **VS Code** (opcional) con manejador de URLs `vscode://` habilitado (se activa al instalar VS Code).
-- Permisos de escritura sobre:
-  - El directorio donde está el dashboard (para crear/mover carpetas).
-  - El archivo `php.ini` **si vas a editarlo desde la web**.
-
----
-
-## 2) Instalación (Windows con XAMPP)
-
-1. Copia todos los archivos de este repositorio **en el directorio que quieras gestionar**. Para gestionar todos los proyectos de `htdocs`, colócalos **directamente en** `C:\xampp\htdocs\`.
-2. Crea la carpeta de imágenes y mueve el ícono:
-   ```text
-   C:\xampp\htdocs\img\folder.svg
-   ```
-   (Si el archivo `folder.svg` lo tienes en la raíz del repo, solo crea `img\` y muévelo ahí).
-3. Abre **Apache** en el Panel de Control de XAMPP.
-4. En tu navegador, entra a: `http://localhost/` (o a la ruta donde colocaste el dashboard si no lo pusiste en la raíz).
-5. (Opcional) Crea manualmente `_PAPELERIA/` y `pass/`, aunque el sistema los genera al usarlos.
-
-> **Nota:** La API **excluye** de la lista de proyectos las carpetas: `dashboard`, `xampp`, `webalizer`, `img`, `_PAPELERIA`, `pass`. (Puedes modificar el arreglo `$noMostrar` en `api.php`).
-
----
-
-## 3) Estructura del proyecto
-
-```
-/ (misma carpeta donde está el dashboard)
-├─ index.php           # UI principal (Bootstrap + modales)
-├─ api.php             # API JSON (listar/crear/mover carpetas, php.ini, archivos, README, contraseñas)
-├─ app.js              # Lado cliente: fetch/UX, búsqueda/orden, modales, limpiar caché
-├─ bitnami.css         # Estilos iOS‑like para tarjetas/botones
-├─ editini.php         # Editor avanzado de php.ini (Tailwind, AJAX)
-├─ Parsedown.php       # Parser Markdown para renderizar README.md de cada proyecto
-├─ img/
-│  └─ folder.svg       # Ícono de carpeta (inyectado en cada tarjeta)
-├─ _PAPELERIA/         # (se crea al usar “mover”) papelera de proyectos
-└─ pass/               # (se crea al guardar contraseñas) JSONs por proyecto
+```text
+/
+|- index.php           # UI principal (Tailwind + modales + auth)
+|- app.js              # Logica cliente, renderizado, API, modales, toasts, bulk
+|- api.php             # API JSON, auth, SMTP, cache, papelera, contrasenas, php.ini
+|- editini.php         # Editor avanzado de php.ini
+|- Parsedown.php       # Parser Markdown
+|- bitnami.css         # Estilos legacy/complementarios
+|- img/
+|  |- folder.svg
+|- _PAPELERIA/         # Se crea automaticamente
+|- pass/               # Credenciales por proyecto
+|- .dashboard_auth.json # Configuracion de seguridad y SMTP
+|- .folder_cache.json   # Cache de metricas
+|- .pass_key.bin        # Clave simetrica para cifrado de contrasenas
 ```
 
----
+## 3. Flujo de seguridad y acceso
 
-## 4) Uso rápido del dashboard
+### 3.1 Primer arranque
 
-- **Buscar**: usa el cuadro “Buscar proyectos…”. Filtra por nombre.
-- **Ordenar**: por **Nombre**, **Tamaño** o **Fecha** (persistente en `localStorage`).
-- **Nuevo proyecto**: botón **“Nuevo proyecto”** → crea carpeta con ese nombre.
-- **Ver archivos / README**: botón **carpeta** abre un modal con:
-  - **Carpetas** y **Archivos** del proyecto (solo primer nivel).
-  - **README.md** (si existe) renderizado (usa `Parsedown.php` si está presente).
-- **Abrir en VS Code**: botón **“</>”** (abre `vscode://file/<ruta>`).
-- **Contraseñas**: botón **llave** abre gestor por proyecto:
-  - **Agregar**: nombre + contraseña.
-  - **Actualizar**: edita contraseña de una entrada existente.
-  - **Eliminar**: borra una entrada.
-  - Se guardan en `pass/<proyecto>.json` (texto plano; **no usar en producción**).
-- **Mover a papelera**: botón **basura** → mueve carpeta a `_PAPELERIA/<proyecto>/`.
-- **Limpiar caché (por proyecto)**: botón **escoba**. Intenta:
-  - Borrar **CacheStorage** de URLs bajo `/{proyecto}/`.
-  - **Desregistrar Service Workers** con *scope* en `/{proyecto}/`.
-  - Borrar **IndexedDB** cuyo nombre contenga el proyecto.
-  - Quitar **localStorage**, **sessionStorage** y **cookies** relacionadas.
-  - Luego, recarga con **Ctrl+F5** el sitio del proyecto.
+En la primera ejecucion se solicita configuracion de seguridad:
 
----
+- Modo local:
+  - Sin login obligatorio.
+  - Pensado para uso en localhost.
+- Modo red:
+  - Requiere usuario y clave.
+  - Permite correo de recuperacion.
+  - Requiere inicio de sesion para usar el panel.
 
-## 5) Editor de `php.ini`
+### 3.2 Sesion y protecciones
 
-### 5.1 Modal básico (desde el dashboard)
-- **Ver**: versión de PHP, **directivas** (`ini_get_all`) y **extensiones** cargadas.
-- **Editar**: botón **“Editar php.ini”** abre un modal con el **contenido del archivo** para editarlo directo y **guardar** (si el archivo es escribible).
+- Login por sesion PHP.
+- Token CSRF para operaciones sensibles via POST.
+- Limite de intentos de login y bloqueo temporal.
+- Cierre de sesion explicito desde la UI.
 
-> Después de guardar cambios en `php.ini`, **reinicia Apache** desde XAMPP para aplicarlos.
+### 3.3 Recuperacion de password
 
-### 5.2 Editor avanzado (`editini.php`)
-- UI en Tailwind con diseño iOS. Permite:
-  - Cambiar **directivas** comunes (memory_limit, upload_max_filesize, post_max_size, max_execution_time, max_input_vars, display_errors, error_reporting, date.timezone) con **tooltips**.
-  - **Activar/Desactivar** líneas `extension=` y `zend_extension=` desde un listado con búsqueda.
-  - **Agregar** nuevas extensiones por nombre o archivo (p. ej., `gd`, `intl`, `php_gd.dll`, `oci8_19`).
-- Endpoints:
-  - `GET editini.php?action=state[&file=/ruta/php.ini]` → estado actual: ruta, directivas y extensiones (con índice de línea).
-  - `POST editini.php?action=save` (JSON):
-    ```json
-    {{
-      "kv":      {{ "memory_limit": "512M", "display_errors": "On" }},
-      "ext_on":  [12, 58],      // índices de línea a habilitar ("extension=")
-      "zext_on": [3],           // índices de línea a habilitar ("zend_extension=")
-      "new_ext": "intl"         // opcional, agrega una línea
-    }}
-    ```
-- Hace **backup automático** del `php.ini`: `php.ini.bak.YYYYMMDD_HHMMSS`.
+- Flujo por codigo de 6 digitos enviado por SMTP.
+- Codigo con expiracion.
+- Permite establecer nueva clave del usuario administrador.
 
-> Si no pasas `file=`, usará el `php.ini` cargado por PHP (`php_ini_loaded_file()`).
+## 4. SMTP: como funciona ahora
 
----
+Configuracion guardada en .dashboard_auth.json bajo la llave smtp:
 
-## 6) API del dashboard (`api.php`)
+- host
+- port
+- encryption: tls | ssl | none
+- user
+- pass
+- from_email
+- from_name
 
-Todas las respuestas son **JSON**; cuando falla, incluye `success: false` y `message`.
-Base URL: `api.php`.
+Durante envio:
 
-### 6.1 Inicialización
-`GET api.php?action=init` →
-```json
-{{
-  "success": true,
-  "php_version": "8.x",
-  "ini": {{ "memory_limit": "...", "upload_max_filesize": "..." }},
-  "extensions": ["curl","mbstring", "..."],
-  "total_size_bytes": 123456789,
-  "total_size_human": "117.7 MB",
-  "projects": [
-    {{
-      "name": "mi-app",
-      "path": "C:\\xampp\\htdocs\\mi-app",
-      "size_bytes": 1234,
-      "size_human": "1.2 KB",
-      "files_count": 7,
-      "created": 1727040000
-    }}
-  ]
-}}
-```
+- Se valida configuracion minima.
+- Se abre conexion por socket al servidor SMTP.
+- Se hace EHLO.
+- Si encryption=tls se ejecuta STARTTLS y nueva negociacion.
+- Se autentica con AUTH LOGIN.
+- Se envia MAIL FROM, RCPT TO y DATA.
 
-### 6.2 `php.ini`
-- `GET api.php?action=get_php_ini` → `{ success, path, content }`.
-- `POST api.php` body `{ "action":"save_php_ini", "content":"..." }` → `{ success }`.
+Mejoras aplicadas recientemente:
 
-### 6.3 Proyectos (carpetas)
-- `POST api.php` body `{ "action":"create_project", "name":"carpeta" }` → crea directorio.
-- `POST api.php` body `{ "action":"move", "folder":"carpeta" }` → mueve a `_PAPELERIA/`.
-- `POST api.php` body `{ "action":"list_files", "folder":"carpeta" }` → retorna:
-  ```json
-  { "success": true, "items": [ { "type":"folder|file", "name":"...", "size":"...", "created": 0 } ], "readme": "<html>...</html>" }
-  ```
-  > El **README** se toma de `carpeta/README.md`; se renderiza con `Parsedown.php` si está disponible (si no, texto plano).
+- Diagnostico de error de conexion mas completo (host, puerto, transporte, errno y detalle real).
+- Normalizacion de host para evitar entradas invalidas con prefijos.
+- Correccion automatica de combinaciones comunes mal configuradas:
+  - puerto 587 con ssl se corrige a tls
+  - puerto 465 con tls se corrige a ssl
 
-### 6.4 Contraseñas por proyecto
-- **Archivo**: `pass/<carpeta>.json` (se crea al guardar). Estructura: `[ { "name":"admin", "password":"..." } ]`.
-- Endpoints:
-  - `POST` `{ "action":"list_passwords", "folder":"carpeta" }`
-  - `POST` `{ "action":"save_passwords", "folder":"carpeta", "name":"...", "password":"..." }`
-  - `POST` `{ "action":"update_password", "folder":"carpeta", "name":"...", "password":"..." }`
-  - `POST` `{ "action":"delete_password", "folder":"carpeta", "name":"..." }`
+## 5. Cache inteligente de metricas
 
----
+El backend usa .folder_cache.json para evitar recalculo constante de tamano y conteo:
 
-## 7) Buenas prácticas y seguridad
+- Huella por carpeta (fingerprint) para detectar cambios.
+- TTL suave para reutilizar cache reciente.
+- TTL duro para forzar refresco periodico.
+- Invalidacion automatica en operaciones mutantes:
+  - crear proyecto
+  - mover a papelera
+  - restaurar
+  - eliminar permanente
+  - acciones masivas
 
-- **Local only**: Usa el dashboard en **localhost** o detrás de autenticación HTTP (Basic/Digest) si lo publicas en una red.
-- **Permisos mínimos**: Da permisos de escritura **solo** al directorio que gestiones y **temporalmente** a `php.ini` cuando edites.
-- **Respaldo**: `editini.php` crea backups de `php.ini`. Aun así, respalda manualmente antes de cambios críticos.
-- **Contraseñas**: Los JSON de `pass/` están en **texto plano**. Úsalos solo para pruebas internas.
-- **XSS/CSRF**: Todas las acciones claves piden confirmación desde el UI; al ser entorno local y misma‑origen, el riesgo es bajo, pero si publicas el panel añade autenticación y tokens CSRF.
-- **Rutas**: El botón VS Code abrirá rutas locales. Funciona si el navegador/OS reconoce `vscode://file/...`.
+Resultado: carga mas rapida y sin necesidad de boton manual de limpiar cache para uso normal.
 
----
+## 6. Gestion de proyectos y papelera
 
-## 8) Solución de problemas
+### 6.1 Proyectos
 
-- **“php.ini no es escribible”**: ejecuta el editor como **Administrador** o cambia temporalmente permisos del archivo (`C:\xampp\php\php.ini`). Reinicia Apache tras guardar.
-- **No veo mi README**: asegúrate de poner `README.md` en la raíz del proyecto (misma carpeta que se lista).
-- **No se mueve a `_PAPELERIA`**: verifica que no exista ya una carpeta con **el mismo nombre** dentro de `_PAPELERIA/` y que no haya archivos bloqueados por otro proceso.
-- **El conteo de archivos es bajo**: el contador muestra **solo primer nivel**; el tamaño sí es **recursivo**.
-- **Limpieza de caché no funciona**: algunos navegadores no permiten listar todas las bases IndexedDB o cookies por dominio; úsalo como **mejor esfuerzo** y refresca con **Ctrl+F5**.
-- **Extensión no carga tras activarla**: revisa `extension_dir` en `php.ini` y que el archivo exista (p. ej. `C:\xampp\php\ext\php_intl.dll` en Windows).
+- Crear proyecto.
+- Abrir listado de archivos de primer nivel.
+- Renderizar README.md del proyecto.
+- Abrir proyecto en VS Code (vscode://file/...).
+- Mover a papelera.
 
----
+### 6.2 Papelera
 
-## 9) Personalización
+- Tab dedicado de papelera.
+- Restaurar proyecto.
+- Eliminar proyecto definitivamente.
 
-- Edita `$noMostrar` en `api.php` para incluir/excluir carpetas del listado.
-- Agrega más **directivas** al arreglo `$editableKeys` en `editini.php` para mostrarlas en el editor avanzado.
-- Cambia el look & feel en `bitnami.css` (paleta iOS‑like, tarjetas con `box-shadow`, botones redondeados).
-- Cambia el SVG de `img/folder.svg` si quieres otro ícono.
+### 6.3 Acciones masivas
 
----
+- En proyectos:
+  - seleccionar visibles
+  - limpiar seleccion
+  - mover seleccionados a papelera
+- En papelera:
+  - seleccionar visibles
+  - limpiar seleccion
+  - restaurar seleccionados
+  - eliminar definitivamente seleccionados
 
-## 10) Créditos
+La UI informa resultados de acciones masivas con resumen de exitos y fallos.
 
-- **Bootstrap 5** + **Font Awesome** en `index.php`.
-- **Tailwind** en `editini.php`.
-- **Parsedown** para renderizar Markdown de README por proyecto.
-- Ícono de carpeta: `img/folder.svg` (incluido).
+## 7. Gestion de credenciales por proyecto
 
----
+Cada proyecto puede tener entradas nombre/password en pass/<proyecto>.json.
 
-## 11) Roadmap sugerido
+Estado actual de seguridad:
 
-- Autenticación (roles) y bitácora de acciones (create/move/edit‑ini).
-- Paginación y métricas (tamaño por subcarpeta, evolución histórica).
-- Editor de README.md desde el propio modal.
-- Acciones masivas (mover/borrar múltiples proyectos).
-- Exportar/Importar contraseñas cifradas por proyecto.
+- Passwords guardadas cifradas en reposo usando sodium secretbox.
+- Clave de cifrado en .pass_key.bin.
+- Compatibilidad con archivos antiguos en texto plano:
+  - al leer, migra a formato cifrado cuando detecta esquema anterior.
+- Desde UI:
+  - agregar credencial
+  - actualizar password
+  - eliminar credencial
+  - copiar password al portapapeles
+
+## 8. Render de README seguro
+
+El backend procesa README.md con Parsedown en modo seguro y aplica sanitizacion defensiva adicional de HTML renderizado.
+
+Objetivo:
+
+- reducir riesgo de inyeccion de etiquetas o atributos peligrosos
+- mantener una vista legible dentro del modal de archivos
+
+## 9. Carpetas protegidas
+
+El backend bloquea operaciones sobre carpetas criticas (segun regla de proteccion), por ejemplo:
+
+- img
+- pass
+- _PAPELERIA
+- dashboard
+- xampp
+- webalizer
+
+Tambien se restringen nombres peligrosos o no validos y ciertos sufijos sensibles en operaciones de gestion.
+
+## 10. UI y UX actuales
+
+- Interfaz redisenada con Tailwind.
+- Sistema de modales unificado.
+- Cierre de modales por ESC y clic fuera.
+- Dialogos custom para confirmar/pedir datos.
+- Toasters para feedback no bloqueante.
+- Tooltips visuales para extensiones.
+- Barras de seleccion y acciones masivas por tab.
+
+## 11. Endpoints principales (api.php)
+
+### 11.1 Estado y seguridad
+
+- GET action=auth_status
+- POST action=auth_setup
+- POST action=auth_login
+- POST action=auth_logout
+- POST action=auth_get_security
+- POST action=auth_update_smtp
+- POST action=auth_request_reset
+- POST action=auth_reset_password
+
+### 11.2 Inicializacion y sistema
+
+- GET action=init
+- GET action=get_php_ini
+- POST action=save_php_ini
+- POST action=refresh_metrics
+
+### 11.3 Proyectos y papelera
+
+- POST action=create_project
+- POST action=move
+- POST action=bulk_move
+- POST action=list_trash
+- POST action=restore_project
+- POST action=bulk_restore
+- POST action=delete_permanently
+- POST action=bulk_delete_permanently
+
+### 11.4 Archivos y README
+
+- POST action=list_files
+
+### 11.5 Credenciales por proyecto
+
+- POST action=list_passwords
+- POST action=save_passwords
+- POST action=update_password
+- POST action=delete_password
+
+## 12. Instalacion rapida (XAMPP Windows)
+
+1. Coloca los archivos en C:/xampp/htdocs o en la carpeta que quieras administrar.
+2. Inicia Apache en XAMPP.
+3. Abre http://localhost/.
+4. Si es primera vez, completa setup de seguridad.
+5. Configura SMTP si usaras recuperacion por correo.
+
+## 13. Solucion de problemas
+
+- Error SMTP de conexion:
+  - valida host, puerto y cifrado
+  - para Gmail usa normalmente 587 + tls o 465 + ssl
+  - verifica salida de red/firewall del servidor Apache/PHP
+- No deja editar php.ini:
+  - revisa permisos de escritura del archivo
+  - reinicia Apache despues de guardar
+- No aparece un proyecto:
+  - revisa que no sea carpeta protegida/excluida
+- Fallo de autenticacion o bloqueo:
+  - espera fin del lockout o reinicia guardas desde configuracion
+
+## 14. Notas operativas
+
+- Este panel sigue orientado a entorno local o intranet controlada.
+- Si se publica en red abierta, se recomienda reforzar:
+  - HTTPS real
+  - control de IP
+  - rotacion de secretos
+  - monitoreo y auditoria de eventos
+
+## 15. Historial de cambios recientes (resumen)
+
+- Migracion UI a Tailwind y modales custom.
+- Sistema de papelera completo con restaurar y borrado definitivo.
+- Cache inteligente de metricas con invalidacion automatica.
+- Autenticacion por modos local/red, CSRF y lockout.
+- Recuperacion de clave por correo SMTP y panel de configuracion SMTP.
+- Sanitizacion reforzada del README renderizado.
+- Restriccion de carpetas criticas.
+- Cifrado en reposo para credenciales por proyecto.
+- Acciones masivas en proyectos y papelera.
