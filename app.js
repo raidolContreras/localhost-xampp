@@ -25,6 +25,36 @@ const dialogState = {
   type: "alert",
 };
 
+const FAV_KEY = "favoriteProjects";
+
+function getFavSet() {
+  try {
+    const raw = localStorage.getItem(FAV_KEY);
+    const arr = raw ? JSON.parse(raw) : [];
+    return new Set(Array.isArray(arr) ? arr : []);
+  } catch (_) {
+    return new Set();
+  }
+}
+
+function saveFavSet(set) {
+  localStorage.setItem(FAV_KEY, JSON.stringify(Array.from(set)));
+}
+
+function isFav(name) {
+  return getFavSet().has(name);
+}
+
+function toggleFav(name) {
+  const set = getFavSet();
+  if (set.has(name)) {
+    set.delete(name);
+  } else {
+    set.add(name);
+  }
+  saveFavSet(set);
+}
+
 const EXTENSION_INFO = {
   core: "Nucleo base de PHP. Siempre esta presente.",
   ctype: "Funciones para validar tipos de caracteres (alfanumerico, digitos, etc.).",
@@ -668,6 +698,13 @@ function renderProjects() {
     });
   });
 
+  grid.querySelectorAll("[data-toggle-fav]").forEach((btn) => {
+    btn.addEventListener("click", () => {
+      toggleFav(btn.dataset.toggleFav || "");
+      renderProjects();
+    });
+  });
+
   grid.querySelectorAll("[data-open-folder]").forEach((btn) => {
     btn.addEventListener("click", () => openFolderDetails(btn.dataset.openFolder || "", false));
   });
@@ -678,6 +715,21 @@ function renderProjects() {
 
   grid.querySelectorAll("[data-move-trash]").forEach((btn) => {
     btn.addEventListener("click", () => moveToTrash(btn.dataset.moveTrash || ""));
+  });
+
+  grid.querySelectorAll("[data-rename-project]").forEach((btn) => {
+    btn.addEventListener("click", () => renameProject(btn.dataset.renameProject || ""));
+  });
+
+  grid.querySelectorAll("[data-duplicate-project]").forEach((btn) => {
+    btn.addEventListener("click", () => duplicateProject(btn.dataset.duplicateProject || ""));
+  });
+
+  grid.querySelectorAll("[data-export-zip]").forEach((btn) => {
+    btn.addEventListener("click", () => {
+      const folder = btn.dataset.exportZip || "";
+      if (folder) window.location = `${API_URL}?action=export_zip&folder=${encodeURIComponent(folder)}`;
+    });
   });
 
   grid.querySelectorAll("[data-open-vscode]").forEach((btn) => {
@@ -727,10 +779,15 @@ function filterAndSort(arr) {
   const term = (document.getElementById("searchInput").value || "").toLowerCase().trim();
   const sortType = document.getElementById("sortSelect").value || "name_asc";
   const [field, order] = sortType.split("_");
+  const favSet = getFavSet();
 
   const filtered = (arr || []).filter((item) => item.name.toLowerCase().includes(term));
 
   filtered.sort((a, b) => {
+    const aFav = favSet.has(a.name) ? 1 : 0;
+    const bFav = favSet.has(b.name) ? 1 : 0;
+    if (aFav !== bFav) return bFav - aFav;
+
     if (field === "size") return order === "asc" ? a.size_bytes - b.size_bytes : b.size_bytes - a.size_bytes;
     if (field === "created") return order === "asc" ? a.created - b.created : b.created - a.created;
     return order === "asc" ? a.name.localeCompare(b.name) : b.name.localeCompare(a.name);
@@ -752,6 +809,7 @@ function projectCardHtml(p, index) {
           <p class="text-xs text-slate-500">${escapeHtml(formatDate(p.created))}</p>
         </div>
         <div class="flex items-center gap-2">
+          <button type="button" data-toggle-fav="${escapeAttr(p.name)}" class="favorite-btn ${isFav(p.name) ? "is-active" : ""}" title="${isFav(p.name) ? "Quitar de favoritos" : "Marcar como favorito"}" aria-label="${isFav(p.name) ? "Quitar de favoritos" : "Marcar como favorito"}">${isFav(p.name) ? "&#9733;" : "&#9734;"}</button>
           <input type="checkbox" data-select-project="${escapeAttr(p.name)}" class="h-4 w-4 rounded border-slate-300 text-mint focus:ring-mint" ${isSelected("projects", p.name) ? "checked" : ""} />
           <span class="rounded-full px-2 py-1 text-[11px] font-medium ${p.cached ? "bg-emerald-100 text-emerald-700" : "bg-amber-100 text-amber-700"}">${cacheTag}</span>
         </div>
@@ -766,10 +824,21 @@ function projectCardHtml(p, index) {
         <button data-open-folder="${escapeAttr(p.name)}" class="rounded-xl border border-slate-200 px-3 py-2 text-xs font-semibold hover:bg-slate-50">Ver contenido</button>
         <button data-open-vscode="${escapeAttr(p.path || "")}" class="rounded-xl border border-slate-200 px-3 py-2 text-xs font-semibold hover:bg-slate-50">Abrir VS Code</button>
         <button data-open-passwords="${escapeAttr(p.name)}" class="rounded-xl border border-slate-200 px-3 py-2 text-xs font-semibold hover:bg-slate-50">Contrasenas</button>
+        <button data-rename-project="${escapeAttr(p.name)}" class="rounded-xl border border-slate-200 px-3 py-2 text-xs font-semibold hover:bg-slate-50">Renombrar</button>
+        <button data-duplicate-project="${escapeAttr(p.name)}" class="rounded-xl border border-slate-200 px-3 py-2 text-xs font-semibold hover:bg-slate-50">Duplicar</button>
+        <button data-export-zip="${escapeAttr(p.name)}" class="rounded-xl border border-slate-200 px-3 py-2 text-xs font-semibold hover:bg-slate-50">Exportar .zip</button>
         <button data-move-trash="${escapeAttr(p.name)}" class="rounded-xl bg-rose-600 px-3 py-2 text-xs font-semibold text-white hover:bg-rose-700">Enviar a papeleria</button>
       </div>
     </article>
   `;
+}
+
+function daysLeftHtml(daysLeft) {
+  if (daysLeft === null || daysLeft === undefined) return "";
+  const urgent = daysLeft <= 3;
+  const cls = urgent ? "text-rose-600" : "text-slate-500";
+  const label = daysLeft <= 0 ? "Se borrara definitivamente muy pronto" : `Borrado automatico en ${daysLeft} dia${daysLeft === 1 ? "" : "s"}`;
+  return `<p class="mt-1 text-xs font-medium ${cls}">${escapeHtml(label)}</p>`;
 }
 
 function trashCardHtml(p, index) {
@@ -781,6 +850,7 @@ function trashCardHtml(p, index) {
       </div>
       <p class="mt-1 text-xs text-slate-500">${escapeHtml(p.size_human)} · ${Number(p.files_count || 0)} archivos</p>
       <p class="mt-1 text-xs text-slate-500">${escapeHtml(formatDate(p.created))}</p>
+      ${daysLeftHtml(p.days_left)}
 
       <div class="mt-4 grid grid-cols-1 gap-2">
         <button data-open-trash-folder="${escapeAttr(p.name)}" class="rounded-xl border border-slate-200 px-3 py-2 text-xs font-semibold hover:bg-slate-50">Ver contenido</button>
@@ -823,6 +893,47 @@ async function moveToTrash(folder) {
 
     await init();
     showToast(`"${folder}" enviado a papeleria.`, "success");
+  } catch (err) {
+    await uiAlert(`Error: ${err?.message || String(err)}`, "Error");
+  }
+}
+
+async function renameProject(folder) {
+  if (!folder) return;
+
+  const newName = await uiPrompt("Nuevo nombre del proyecto:", folder, "Renombrar proyecto");
+  if (!newName || !newName.trim() || newName.trim() === folder) return;
+
+  try {
+    const res = await apiPost({ action: "rename_project", folder, new_name: newName.trim() });
+    if (!res.success) {
+      await uiAlert(`Error: ${res.message || "No se pudo renombrar"}`, "Error");
+      return;
+    }
+
+    await init();
+    showToast(`"${folder}" renombrado a "${res.name}".`, "success");
+  } catch (err) {
+    await uiAlert(`Error: ${err?.message || String(err)}`, "Error");
+  }
+}
+
+async function duplicateProject(folder) {
+  if (!folder) return;
+
+  const newName = await uiPrompt("Nombre para la copia:", `${folder}-copia`, "Duplicar proyecto");
+  if (!newName || !newName.trim()) return;
+
+  try {
+    showToast(`Duplicando "${folder}"...`, "info", 3500);
+    const res = await apiPost({ action: "duplicate_project", folder, new_name: newName.trim() });
+    if (!res.success) {
+      await uiAlert(`Error: ${res.message || "No se pudo duplicar"}`, "Error");
+      return;
+    }
+
+    await init();
+    showToast(`"${folder}" duplicado como "${res.name}".`, "success");
   } catch (err) {
     await uiAlert(`Error: ${err?.message || String(err)}`, "Error");
   }
@@ -896,10 +1007,29 @@ async function onRefreshMetrics() {
   }
 }
 
-async function openFolderDetails(folder, fromTrash) {
+function breadcrumbsHtml(folder, subpath) {
+  const segments = subpath ? subpath.split("/").filter(Boolean) : [];
+  const crumbs = [{ label: folder, path: "" }];
+  let acc = "";
+  segments.forEach((seg) => {
+    acc = acc ? `${acc}/${seg}` : seg;
+    crumbs.push({ label: seg, path: acc });
+  });
+
+  const parts = crumbs.map((c, i) => {
+    if (i === crumbs.length - 1) {
+      return `<span class="font-semibold text-slate-700">${escapeHtml(c.label)}</span>`;
+    }
+    return `<button type="button" data-breadcrumb="${escapeAttr(c.path)}" class="text-mint hover:underline">${escapeHtml(c.label)}</button>`;
+  });
+
+  return `<div class="mb-3 flex flex-wrap items-center gap-1 text-sm text-slate-500">${parts.join('<span class="text-slate-300">/</span>')}</div>`;
+}
+
+async function openFolderDetails(folder, fromTrash, subpath = "") {
   if (!folder) return;
 
-  state.currentFolderView = { folder, fromTrash };
+  state.currentFolderView = { folder, fromTrash, subpath };
   document.getElementById("folderModalLabel").textContent = fromTrash ? `Papeleria: ${folder}` : folder;
   document.getElementById("filesPane").innerHTML = loaderHtml("Cargando contenido...");
   document.getElementById("readmePane").innerHTML = "";
@@ -907,16 +1037,18 @@ async function openFolderDetails(folder, fromTrash) {
   openModal("folderModal");
 
   try {
-    const data = await apiPost({ action: "list_files", folder, fromTrash });
+    const data = await apiPost({ action: "list_files", folder, fromTrash, subpath });
     if (!data.success) throw new Error(data.message || "No se pudo listar");
 
     const folders = (data.items || []).filter((x) => x.type === "folder");
     const files = (data.items || []).filter((x) => x.type === "file");
+    const currentSubpath = data.subpath || "";
 
-    let html = "";
+    let html = breadcrumbsHtml(folder, currentSubpath);
+
     if (folders.length) {
       html += `<div class="rounded-xl border border-slate-200 p-3"><p class="mb-2 text-sm font-semibold text-slate-700">Carpetas</p><ul class="space-y-2">${folders
-        .map((f) => `<li class="flex justify-between gap-3 rounded-lg bg-slate-50 px-3 py-2 text-sm"><span>${escapeHtml(f.name)}</span><span class="text-slate-500">${escapeHtml(f.size)}</span></li>`)
+        .map((f) => `<li data-open-subfolder="${escapeAttr(f.name)}" class="flex cursor-pointer justify-between gap-3 rounded-lg bg-slate-50 px-3 py-2 text-sm hover:bg-slate-100"><span>&#128193; ${escapeHtml(f.name)}</span><span class="text-slate-500">${escapeHtml(f.size)}</span></li>`)
         .join("")}</ul></div>`;
     }
 
@@ -926,11 +1058,25 @@ async function openFolderDetails(folder, fromTrash) {
         .join("")}</ul></div>`;
     }
 
-    if (!html) {
-      html = emptyStateHtml("Carpeta vacia", "No hay elementos para mostrar.");
+    if (!folders.length && !files.length) {
+      html += emptyStateHtml("Carpeta vacia", "No hay elementos para mostrar.");
     }
 
-    document.getElementById("filesPane").innerHTML = html;
+    const filesPane = document.getElementById("filesPane");
+    filesPane.innerHTML = html;
+
+    filesPane.querySelectorAll("[data-open-subfolder]").forEach((row) => {
+      row.addEventListener("click", () => {
+        const nextSubpath = currentSubpath ? `${currentSubpath}/${row.dataset.openSubfolder}` : row.dataset.openSubfolder;
+        openFolderDetails(folder, fromTrash, nextSubpath);
+      });
+    });
+
+    filesPane.querySelectorAll("[data-breadcrumb]").forEach((crumb) => {
+      crumb.addEventListener("click", () => {
+        openFolderDetails(folder, fromTrash, crumb.dataset.breadcrumb || "");
+      });
+    });
 
     const readmePane = document.getElementById("readmePane");
     const readmeBtn = document.getElementById("readmeTabBtn");

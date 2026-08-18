@@ -87,6 +87,10 @@ if ($method === 'GET' && $action === 'get_php_config') {
     handle_get_php_config();
 }
 
+if ($method === 'GET' && $action === 'export_zip') {
+    handle_export_zip($baseDir, (string) ($_GET['folder'] ?? ''));
+}
+
 if ($method === 'GET' && $action === 'get_php_ini') {
     handle_get_php_ini();
 }
@@ -97,6 +101,14 @@ if ($method === 'POST' && $action === 'save_php_ini') {
 
 if ($method === 'POST' && $action === 'create_project') {
     handle_create_project($body, $baseDir, $cache);
+}
+
+if ($method === 'POST' && $action === 'rename_project') {
+    handle_rename_project($body, $baseDir, $cache);
+}
+
+if ($method === 'POST' && $action === 'duplicate_project') {
+    handle_duplicate_project($body, $baseDir, $cache);
 }
 
 if ($method === 'POST' && $action === 'move') {

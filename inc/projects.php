@@ -2,6 +2,62 @@
 
 declare(strict_types=1);
 
+const TRASH_RETENTION_DAYS = 30;
+const TRASH_MARKER_FILE = '.trashed_at';
+
+function markTrashedNow(string $trashedFolderPath): void {
+    @file_put_contents($trashedFolderPath . DIRECTORY_SEPARATOR . TRASH_MARKER_FILE, (string) time());
+}
+
+/**
+ * Borra definitivamente cualquier carpeta de papeleria cuyo marcador
+ * .trashed_at supere TRASH_RETENTION_DAYS. Se llama de forma oportunista
+ * al listar la papeleria (init/list_trash), no depende de un cron externo.
+ */
+function purgeExpiredTrash(string $trashPath, array &$cache): void {
+    if (!is_dir($trashPath)) return;
+
+    $now = time();
+    $cutoffSeconds = TRASH_RETENTION_DAYS * 86400;
+
+    foreach (@scandir($trashPath) ?: [] as $name) {
+        if ($name === '.' || $name === '..' || $name === '') continue;
+        $full = $trashPath . DIRECTORY_SEPARATOR . $name;
+        if (!is_dir($full)) continue;
+
+        $marker = $full . DIRECTORY_SEPARATOR . TRASH_MARKER_FILE;
+        if (!is_file($marker)) continue;
+
+        $trashedAt = (int) trim((string) (@file_get_contents($marker) ?: '0'));
+        if ($trashedAt > 0 && ($now - $trashedAt) > $cutoffSeconds) {
+            if (recursiveDeleteDir($full)) {
+                invalidateMetricsForFolder($cache, $name);
+            }
+        }
+    }
+}
+
+/**
+ * Agrega trashed_at/days_left a cada item de un payload de papeleria ya
+ * construido con buildProjectPayload, leyendo el marcador por carpeta.
+ */
+function enrichTrashPayload(array $trash, string $trashPath): array {
+    $now = time();
+
+    foreach ($trash as &$item) {
+        $marker = $trashPath . DIRECTORY_SEPARATOR . $item['name'] . DIRECTORY_SEPARATOR . TRASH_MARKER_FILE;
+        $trashedAt = is_file($marker) ? (int) trim((string) (@file_get_contents($marker) ?: '0')) : 0;
+
+        $item['trashed_at'] = $trashedAt;
+        $item['days_left'] = $trashedAt > 0
+            ? max(0, TRASH_RETENTION_DAYS - (int) floor(($now - $trashedAt) / 86400))
+            : null;
+    }
+    unset($item);
+
+    return $trash;
+}
+
 function recursiveDeleteDir(string $dir): bool {
     if (!is_dir($dir)) return false;
 
@@ -20,6 +76,33 @@ function recursiveDeleteDir(string $dir): bool {
     } catch (Throwable $e) {
         return false;
     }
+}
+
+/**
+ * Resuelve un subpath relativo (ej. "src/components") dentro de $projectRoot,
+ * rechazando cualquier segmento vacio, "." o ".." y verificando con realpath()
+ * que la ruta final siga dentro del proyecto. Devuelve null si es invalida.
+ */
+function resolveSubpath(string $projectRoot, string $subpath): ?string {
+    $subpath = trim(str_replace('\\', '/', $subpath), '/');
+    if ($subpath === '') return $projectRoot;
+
+    $segments = explode('/', $subpath);
+    foreach ($segments as $seg) {
+        if ($seg === '' || $seg === '.' || $seg === '..') return null;
+    }
+
+    $candidate = $projectRoot . DIRECTORY_SEPARATOR . implode(DIRECTORY_SEPARATOR, $segments);
+    if (!is_dir($candidate)) return null;
+
+    $realRoot = realpath($projectRoot);
+    $realCandidate = realpath($candidate);
+    if ($realRoot === false || $realCandidate === false) return null;
+    if ($realCandidate !== $realRoot && !str_starts_with($realCandidate, $realRoot . DIRECTORY_SEPARATOR)) {
+        return null;
+    }
+
+    return $candidate;
 }
 
 function ensureTrash(string $trashPath): bool {
@@ -69,7 +152,7 @@ function listFilesAndReadme(string $folderPath): array {
 
     $items = [];
     foreach (@scandir($folderPath) ?: [] as $it) {
-        if ($it === '.' || $it === '..') continue;
+        if ($it === '.' || $it === '..' || $it === TRASH_MARKER_FILE) continue;
         $full = $folderPath . DIRECTORY_SEPARATOR . $it;
 
         if (is_dir($full)) {
@@ -201,8 +284,10 @@ function sanitizeRenderedHtml(string $html): string {
 }
 
 function handle_init(string $baseDir, string $trashPath, array $noMostrar, array &$cache, bool $force): never {
+    purgeExpiredTrash($trashPath, $cache);
+
     $projects = buildProjectPayload(listVisibleProjects($baseDir, $noMostrar), $cache, $force);
-    $trash = buildProjectPayload(listTrashProjects($trashPath), $cache, $force);
+    $trash = enrichTrashPayload(buildProjectPayload(listTrashProjects($trashPath), $cache, $force), $trashPath);
 
     usort($projects, fn(array $a, array $b): int => strcasecmp($a['name'], $b['name']));
     usort($trash, fn(array $a, array $b): int => strcasecmp($a['name'], $b['name']));
@@ -227,6 +312,56 @@ function handle_init(string $baseDir, string $trashPath, array $noMostrar, array
             'updated_at' => (int) ($cache['meta']['updated_at'] ?? 0),
         ],
     ]);
+}
+
+function handle_export_zip(string $baseDir, string $folder): never {
+    $folder = sanitizeFolderName($folder);
+    if ($folder === '' || isProtectedFolder($folder)) {
+        jsonOut(['success' => false, 'message' => 'Carpeta invalida'], 400);
+    }
+
+    $projectPath = $baseDir . DIRECTORY_SEPARATOR . $folder;
+    if (!is_dir($projectPath)) {
+        jsonOut(['success' => false, 'message' => 'Proyecto no encontrado'], 404);
+    }
+
+    if (!class_exists('ZipArchive')) {
+        jsonOut(['success' => false, 'message' => 'La extension zip no esta disponible en este PHP'], 500);
+    }
+
+    // Proyectos grandes pueden tardar mas que max_execution_time en comprimirse.
+    @set_time_limit(0);
+
+    $tmpZip = tempnam(sys_get_temp_dir(), 'export_') . '.zip';
+    $zip = new ZipArchive();
+    if ($zip->open($tmpZip, ZipArchive::CREATE | ZipArchive::OVERWRITE) !== true) {
+        jsonOut(['success' => false, 'message' => 'No se pudo crear el archivo zip'], 500);
+    }
+
+    $it = new RecursiveIteratorIterator(
+        new RecursiveDirectoryIterator($projectPath, FilesystemIterator::SKIP_DOTS),
+        RecursiveIteratorIterator::SELF_FIRST
+    );
+
+    foreach ($it as $item) {
+        $relative = ltrim(str_replace('\\', '/', substr($item->getPathname(), strlen($projectPath))), '/');
+        $localName = $folder . '/' . $relative;
+
+        if ($item->isDir()) {
+            $zip->addEmptyDir($localName);
+        } else {
+            $zip->addFile($item->getPathname(), $localName);
+        }
+    }
+
+    $zip->close();
+
+    header('Content-Type: application/zip');
+    header('Content-Disposition: attachment; filename="' . $folder . '.zip"');
+    header('Content-Length: ' . (string) filesize($tmpZip));
+    readfile($tmpZip);
+    @unlink($tmpZip);
+    exit;
 }
 
 function handle_get_php_config(): never {
@@ -279,6 +414,85 @@ function handle_create_project(array $body, string $baseDir, array &$cache): nev
     jsonOut(['success' => false, 'message' => 'No se pudo crear el proyecto'], 500);
 }
 
+function handle_rename_project(array $body, string $baseDir, array &$cache): never {
+    $folder = sanitizeFolderName((string) ($body['folder'] ?? ''));
+    $newName = sanitizeFolderName((string) ($body['new_name'] ?? ''));
+
+    if ($folder === '' || isProtectedFolder($folder)) jsonOut(['success' => false, 'message' => 'Carpeta invalida'], 400);
+    if ($newName === '' || isProtectedFolder($newName)) jsonOut(['success' => false, 'message' => 'Nombre nuevo invalido'], 400);
+    if ($newName === $folder) jsonOut(['success' => false, 'message' => 'El nuevo nombre es igual al actual'], 400);
+
+    $src = $baseDir . DIRECTORY_SEPARATOR . $folder;
+    if (!is_dir($src)) jsonOut(['success' => false, 'message' => 'No existe la carpeta'], 404);
+
+    $dst = $baseDir . DIRECTORY_SEPARATOR . $newName;
+    if (is_dir($dst)) jsonOut(['success' => false, 'message' => 'Ya existe un proyecto con ese nombre'], 409);
+
+    if (!@rename($src, $dst)) {
+        jsonOut(['success' => false, 'message' => 'No se pudo renombrar el proyecto'], 500);
+    }
+
+    invalidateMetricsForFolder($cache, $folder);
+    invalidateMetricsForFolder($cache, $newName);
+    writeCache($cache);
+
+    jsonOut(['success' => true, 'message' => 'Proyecto renombrado', 'name' => $newName]);
+}
+
+function recursiveCopyDir(string $src, string $dst): bool {
+    if (!is_dir($src)) return false;
+    if (!is_dir($dst) && !@mkdir($dst, 0755, true)) return false;
+
+    try {
+        $it = new RecursiveIteratorIterator(
+            new RecursiveDirectoryIterator($src, FilesystemIterator::SKIP_DOTS),
+            RecursiveIteratorIterator::SELF_FIRST
+        );
+
+        foreach ($it as $item) {
+            $target = $dst . DIRECTORY_SEPARATOR . $it->getSubPathName();
+
+            if ($item->isDir()) {
+                if (!is_dir($target) && !@mkdir($target, 0755, true)) return false;
+                continue;
+            }
+
+            if (!@copy($item->getPathname(), $target)) return false;
+        }
+
+        return true;
+    } catch (Throwable $e) {
+        return false;
+    }
+}
+
+function handle_duplicate_project(array $body, string $baseDir, array &$cache): never {
+    $folder = sanitizeFolderName((string) ($body['folder'] ?? ''));
+    $newName = sanitizeFolderName((string) ($body['new_name'] ?? ($folder !== '' ? $folder . '-copia' : '')));
+
+    if ($folder === '' || isProtectedFolder($folder)) jsonOut(['success' => false, 'message' => 'Carpeta invalida'], 400);
+    if ($newName === '' || isProtectedFolder($newName)) jsonOut(['success' => false, 'message' => 'Nombre nuevo invalido'], 400);
+
+    $src = $baseDir . DIRECTORY_SEPARATOR . $folder;
+    if (!is_dir($src)) jsonOut(['success' => false, 'message' => 'No existe la carpeta'], 404);
+
+    $dst = $baseDir . DIRECTORY_SEPARATOR . $newName;
+    if (is_dir($dst)) jsonOut(['success' => false, 'message' => 'Ya existe un proyecto con ese nombre'], 409);
+
+    // Proyectos grandes pueden tardar mas que max_execution_time en copiarse.
+    @set_time_limit(0);
+
+    if (!recursiveCopyDir($src, $dst)) {
+        recursiveDeleteDir($dst);
+        jsonOut(['success' => false, 'message' => 'No se pudo duplicar el proyecto (copia parcial revertida)'], 500);
+    }
+
+    invalidateMetricsForFolder($cache, $newName);
+    writeCache($cache);
+
+    jsonOut(['success' => true, 'message' => 'Proyecto duplicado', 'name' => $newName]);
+}
+
 function handle_move(array $body, string $baseDir, string $trashPath, array &$cache): never {
     $folder = sanitizeFolderName((string) ($body['folder'] ?? ''));
     if ($folder === '' || isProtectedFolder($folder)) jsonOut(['success' => false, 'message' => 'Carpeta invalida'], 400);
@@ -297,6 +511,7 @@ function handle_move(array $body, string $baseDir, string $trashPath, array &$ca
         jsonOut(['success' => false, 'message' => 'No se pudo mover la carpeta'], 500);
     }
 
+    markTrashedNow($dst);
     invalidateMetricsForFolder($cache, $folder);
     invalidateMetricsForFolder($cache, basename($dst));
     writeCache($cache);
@@ -340,6 +555,7 @@ function handle_bulk_move(array $body, string $baseDir, string $trashPath, array
             continue;
         }
 
+        markTrashedNow($dst);
         $moved[] = basename($dst);
         invalidateMetricsForFolder($cache, $folder);
         invalidateMetricsForFolder($cache, basename($dst));
@@ -350,7 +566,9 @@ function handle_bulk_move(array $body, string $baseDir, string $trashPath, array
 }
 
 function handle_list_trash(string $trashPath, array &$cache): never {
-    $trash = buildProjectPayload(listTrashProjects($trashPath), $cache, false);
+    purgeExpiredTrash($trashPath, $cache);
+
+    $trash = enrichTrashPayload(buildProjectPayload(listTrashProjects($trashPath), $cache, false), $trashPath);
     usort($trash, fn(array $a, array $b): int => strcasecmp($a['name'], $b['name']));
     if (in_array(false, array_column($trash, 'cached'), true)) {
         writeCache($cache);
@@ -484,8 +702,10 @@ function handle_bulk_delete_permanently(array $body, string $trashPath, array &$
 }
 
 function handle_refresh_metrics(string $baseDir, string $trashPath, array $noMostrar, array &$cache): never {
+    purgeExpiredTrash($trashPath, $cache);
+
     $projects = buildProjectPayload(listVisibleProjects($baseDir, $noMostrar), $cache, true);
-    $trash = buildProjectPayload(listTrashProjects($trashPath), $cache, true);
+    $trash = enrichTrashPayload(buildProjectPayload(listTrashProjects($trashPath), $cache, true), $trashPath);
     writeCache($cache);
 
     jsonOut([
@@ -499,6 +719,7 @@ function handle_refresh_metrics(string $baseDir, string $trashPath, array $noMos
 function handle_list_files(array $body, string $baseDir, string $trashPath): never {
     $folder = sanitizeFolderName((string) ($body['folder'] ?? ''));
     $fromTrash = (bool) ($body['fromTrash'] ?? false);
+    $subpath = (string) ($body['subpath'] ?? '');
 
     if ($folder === '') jsonOut(['success' => false, 'message' => 'Carpeta invalida'], 400);
     if (!$fromTrash && isProtectedFolder($folder)) {
@@ -506,7 +727,17 @@ function handle_list_files(array $body, string $baseDir, string $trashPath): nev
     }
 
     $root = $fromTrash ? $trashPath : $baseDir;
-    $path = $root . DIRECTORY_SEPARATOR . $folder;
+    $projectPath = $root . DIRECTORY_SEPARATOR . $folder;
 
-    jsonOut(listFilesAndReadme($path));
+    $path = resolveSubpath($projectPath, $subpath);
+    if ($path === null) {
+        jsonOut(['success' => false, 'message' => 'Ruta invalida'], 400);
+    }
+
+    $result = listFilesAndReadme($path);
+    if ($result['success'] ?? false) {
+        $result['subpath'] = trim(str_replace('\\', '/', $subpath), '/');
+    }
+
+    jsonOut($result);
 }

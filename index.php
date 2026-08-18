@@ -99,6 +99,21 @@
         transform: translateY(0) scale(1);
       }
     }
+    .favorite-btn {
+      background: none;
+      border: none;
+      padding: 0;
+      line-height: 1;
+      font-size: 1.35rem;
+      cursor: pointer;
+      color: #cbd5e1;
+    }
+    .favorite-btn:hover {
+      color: #d9822b;
+    }
+    .favorite-btn.is-active {
+      color: #d9822b;
+    }
   </style>
 </head>
 <body class="text-ink font-body">

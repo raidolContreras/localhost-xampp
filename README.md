@@ -24,7 +24,6 @@ Panel web para administrar proyectos en htdocs con interfaz moderna (Tailwind), 
 |- app.js              # Logica cliente, renderizado, API, modales, toasts, bulk
 |- api.php             # API JSON, auth, SMTP, cache, papelera, contrasenas, php.ini
 |- Parsedown.php       # Parser Markdown
-|- bitnami.css         # Estilos legacy/complementarios
 |- img/
 |  |- folder.svg
 |- _PAPELERIA/         # Se crea automaticamente
