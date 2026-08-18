@@ -23,7 +23,6 @@ Panel web para administrar proyectos en htdocs con interfaz moderna (Tailwind), 
 |- index.php           # UI principal (Tailwind + modales + auth)
 |- app.js              # Logica cliente, renderizado, API, modales, toasts, bulk
 |- api.php             # API JSON, auth, SMTP, cache, papelera, contrasenas, php.ini
-|- editini.php         # Editor avanzado de php.ini
 |- Parsedown.php       # Parser Markdown
 |- bitnami.css         # Estilos legacy/complementarios
 |- img/
