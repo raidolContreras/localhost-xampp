@@ -1,1 +1,6 @@
 .folder_cache.json
+.dashboard_auth.json
+.pass_key.bin
+pass/
+*.bak.*
+
