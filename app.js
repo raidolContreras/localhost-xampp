@@ -1357,6 +1357,24 @@ function resultCount(value) {
   return Number.isFinite(n) ? n : 0;
 }
 
+async function withBulkButtonBusy(buttonId, count, fn) {
+  const btn = document.getElementById(buttonId);
+  const original = btn ? btn.textContent : "";
+  if (btn) {
+    btn.disabled = true;
+    btn.textContent = `Procesando ${count} elemento${count === 1 ? "" : "s"}...`;
+  }
+
+  try {
+    return await fn();
+  } finally {
+    if (btn) {
+      btn.disabled = false;
+      btn.textContent = original;
+    }
+  }
+}
+
 async function onBulkMoveToTrash() {
   const folders = state.selectedProjects.slice();
   if (!folders.length) {
@@ -1368,7 +1386,7 @@ async function onBulkMoveToTrash() {
   if (!ok) return;
 
   try {
-    const res = await apiPost({ action: "bulk_move", folders });
+    const res = await withBulkButtonBusy("bulkMoveTrashBtn", folders.length, () => apiPost({ action: "bulk_move", folders }));
     if (!res.success) {
       await uiAlert(`Error: ${res.message || "No se pudo ejecutar la accion masiva"}`, "Error");
       return;
@@ -1396,7 +1414,7 @@ async function onBulkRestore() {
   if (!ok) return;
 
   try {
-    const res = await apiPost({ action: "bulk_restore", folders });
+    const res = await withBulkButtonBusy("bulkRestoreBtn", folders.length, () => apiPost({ action: "bulk_restore", folders }));
     if (!res.success) {
       await uiAlert(`Error: ${res.message || "No se pudo ejecutar la accion masiva"}`, "Error");
       return;
@@ -1428,7 +1446,9 @@ async function onBulkDeleteForever() {
   if (!ok) return;
 
   try {
-    const res = await apiPost({ action: "bulk_delete_permanently", folders });
+    const res = await withBulkButtonBusy("bulkDeleteForeverBtn", folders.length, () =>
+      apiPost({ action: "bulk_delete_permanently", folders })
+    );
     if (!res.success) {
       await uiAlert(`Error: ${res.message || "No se pudo ejecutar la accion masiva"}`, "Error");
       return;
