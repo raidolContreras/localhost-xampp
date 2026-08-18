@@ -83,6 +83,10 @@ if ($method === 'GET' && $action === 'init') {
     handle_init($baseDir, $trashPath, $noMostrar, $cache, $force);
 }
 
+if ($method === 'GET' && $action === 'get_php_config') {
+    handle_get_php_config();
+}
+
 if ($method === 'GET' && $action === 'get_php_ini') {
     handle_get_php_ini();
 }

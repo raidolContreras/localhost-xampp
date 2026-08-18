@@ -208,26 +208,37 @@ function handle_init(string $baseDir, string $trashPath, array $noMostrar, array
     usort($trash, fn(array $a, array $b): int => strcasecmp($a['name'], $b['name']));
 
     $totalSize = array_sum(array_column($projects, 'size_bytes'));
+
+    $dirty = in_array(false, array_column($projects, 'cached'), true)
+        || in_array(false, array_column($trash, 'cached'), true);
+    if ($dirty) {
+        writeCache($cache);
+    }
+
+    jsonOut([
+        'success' => true,
+        'php_version' => PHP_VERSION,
+        'total_size_bytes' => $totalSize,
+        'total_size_human' => humanFileSize((int) $totalSize),
+        'projects' => $projects,
+        'trash' => $trash,
+        'cache' => [
+            'hard_ttl' => CACHE_HARD_TTL,
+            'updated_at' => (int) ($cache['meta']['updated_at'] ?? 0),
+        ],
+    ]);
+}
+
+function handle_get_php_config(): never {
     $ini = @ini_get_all(null, false) ?: [];
     $extensions = @get_loaded_extensions() ?: [];
     sort($extensions);
-
-    writeCache($cache);
 
     jsonOut([
         'success' => true,
         'php_version' => PHP_VERSION,
         'ini' => $ini,
         'extensions' => $extensions,
-        'total_size_bytes' => $totalSize,
-        'total_size_human' => humanFileSize((int) $totalSize),
-        'projects' => $projects,
-        'trash' => $trash,
-        'cache' => [
-            'soft_ttl' => CACHE_SOFT_TTL,
-            'hard_ttl' => CACHE_HARD_TTL,
-            'updated_at' => (int) ($cache['meta']['updated_at'] ?? 0),
-        ],
     ]);
 }
 
@@ -341,7 +352,9 @@ function handle_bulk_move(array $body, string $baseDir, string $trashPath, array
 function handle_list_trash(string $trashPath, array &$cache): never {
     $trash = buildProjectPayload(listTrashProjects($trashPath), $cache, false);
     usort($trash, fn(array $a, array $b): int => strcasecmp($a['name'], $b['name']));
-    writeCache($cache);
+    if (in_array(false, array_column($trash, 'cached'), true)) {
+        writeCache($cache);
+    }
     jsonOut(['success' => true, 'trash' => $trash]);
 }
 

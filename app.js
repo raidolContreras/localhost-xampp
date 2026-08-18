@@ -83,7 +83,7 @@ function bindBaseEvents() {
   document.getElementById("refreshMetricsBtn").addEventListener("click", onRefreshMetrics);
   document.getElementById("editPhpIniBtn").addEventListener("click", onOpenPhpIni);
   document.getElementById("savePhpIniBtn").addEventListener("click", onSavePhpIni);
-  document.getElementById("phpConfigBtn").addEventListener("click", () => openModal("phpConfigModal"));
+  document.getElementById("phpConfigBtn").addEventListener("click", onOpenPhpConfig);
   document.getElementById("securitySettingsBtn").addEventListener("click", onOpenSmtpSettings);
   document.getElementById("logoutBtn").addEventListener("click", onLogout);
   document.getElementById("saveSmtpBtn").addEventListener("click", onSaveSmtpSettings);
@@ -195,12 +195,9 @@ async function init(force = false) {
     state.trash = data.trash || [];
     state.totalSizeBytes = Number(data.total_size_bytes || 0);
     state.phpVersion = data.php_version || "-";
-    state.ini = data.ini || {};
-    state.extensions = data.extensions || [];
     pruneSelections();
 
     renderHeader();
-    renderPhpConfig();
     renderActiveGrid();
   } catch (err) {
     const msg = err?.message || String(err);
@@ -454,6 +451,29 @@ function renderHeader() {
   document.getElementById("totalSizeLabel").textContent = humanBytes(state.totalSizeBytes);
   document.getElementById("phpVersionBtn").textContent = state.phpVersion;
   document.getElementById("trashCountLabel").textContent = String((state.trash || []).length);
+}
+
+async function onOpenPhpConfig() {
+  const phpContainer = document.getElementById("phpDropdownMenu");
+  openModal("phpConfigModal");
+
+  if ((state.extensions || []).length || Object.keys(state.ini || {}).length) {
+    renderPhpConfig();
+    return;
+  }
+
+  phpContainer.innerHTML = loaderHtml("Cargando configuracion de PHP...");
+
+  try {
+    const data = await apiGet("get_php_config");
+    if (!data.success) throw new Error(data.message || "No se pudo cargar la configuracion de PHP");
+
+    state.ini = data.ini || {};
+    state.extensions = data.extensions || [];
+    renderPhpConfig();
+  } catch (err) {
+    phpContainer.innerHTML = errorHtml(err?.message || String(err));
+  }
 }
 
 function renderPhpConfig() {

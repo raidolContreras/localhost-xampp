@@ -3,7 +3,9 @@
 declare(strict_types=1);
 
 const CACHE_FILE = APP_ROOT . '/.folder_cache.json';
-const CACHE_SOFT_TTL = 120;
+// Red de seguridad: si el fingerprint superficial coincide, confiamos en el
+// cache sin recalcular hasta este limite, para detectar cambios profundos
+// que el fingerprint (solo nivel superior de la carpeta) no puede ver.
 const CACHE_HARD_TTL = 1800;
 
 function readCache(): array {
@@ -78,15 +80,17 @@ function getMetrics(string $scope, string $name, string $path, array &$cache, bo
         && ($now - (int) $cached['updated_at']) <= CACHE_HARD_TTL;
 
     if (!$force && $isValidCached) {
-        $age = $now - (int) $cached['updated_at'];
-        if ($age <= CACHE_SOFT_TTL) {
-            return [
-                'size_bytes' => (int) $cached['size_bytes'],
-                'files_count' => (int) $cached['files_count'],
-                'cached' => true,
-                'cache_age' => $age,
-            ];
-        }
+        // El fingerprint superficial no cambio: confiar en el tamano/conteo
+        // cacheados sin recorrer el arbol de archivos otra vez. No se toca
+        // 'updated_at' para que CACHE_HARD_TTL siga forzando un recalculo
+        // periodico (unico mecanismo que detecta cambios profundos que el
+        // fingerprint de nivel superior no puede ver).
+        return [
+            'size_bytes' => (int) $cached['size_bytes'],
+            'files_count' => (int) $cached['files_count'],
+            'cached' => true,
+            'cache_age' => $now - (int) $cached['updated_at'],
+        ];
     }
 
     [$size, $files] = dirSizeAndCount($path);
